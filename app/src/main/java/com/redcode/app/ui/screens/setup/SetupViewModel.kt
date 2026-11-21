@@ -29,8 +29,10 @@ class SetupViewModel @Inject constructor(
         listOf(
             SetupStepItem(0, "Downloading Ubuntu RootFS", SetupStepStatus.PENDING),
             SetupStepItem(1, "Extracting Runtime", SetupStepStatus.PENDING),
-            SetupStepItem(2, "Installing OpenCode Engine", SetupStepStatus.PENDING),
-            SetupStepItem(3, "Starting Server", SetupStepStatus.PENDING)
+            SetupStepItem(2, "System Dependencies (apt)", SetupStepStatus.PENDING),
+            SetupStepItem(3, "Installing Node.js LTS", SetupStepStatus.PENDING),
+            SetupStepItem(4, "Installing OpenCode Engine", SetupStepStatus.PENDING),
+            SetupStepItem(5, "Verifying & Starting Server", SetupStepStatus.PENDING)
         )
     )
     val steps: StateFlow<List<SetupStepItem>> = _steps.asStateFlow()
@@ -60,7 +62,7 @@ class SetupViewModel @Inject constructor(
         viewModelScope.launch {
             _errorMessage.value = null
 
-            // Verify PRoot runtime self-check before starting
+            // 1. Verify PRoot runtime binary
             openCodeServer.appendLog("=== Verifying PRoot runtime binary ===")
             val prootCheck = prootRunner.verifyProot()
             if (prootCheck.isFailure) {
@@ -72,18 +74,29 @@ class SetupViewModel @Inject constructor(
             }
             openCodeServer.appendLog("PRoot self-check passed: ${prootCheck.getOrNull()?.lines()?.firstOrNull() ?: "OK"}")
 
-            // If already installed, skip directly to server start
+            // 2. Check if RootFS is already installed
             if (ubuntuInstaller.isRootfsInstalled) {
                 updateStep(0, SetupStepStatus.COMPLETED)
                 updateStep(1, SetupStepStatus.COMPLETED)
-                updateStep(2, SetupStepStatus.COMPLETED)
-                startServerStep()
-                return@launch
+
+                // Check if OpenCode is also already installed
+                if (openCodeServer.isOpenCodeInstalled()) {
+                    openCodeServer.appendLog("OpenCode engine is already installed!")
+                    updateStep(2, SetupStepStatus.COMPLETED)
+                    updateStep(3, SetupStepStatus.COMPLETED)
+                    updateStep(4, SetupStepStatus.COMPLETED)
+                    startServerStep()
+                    return@launch
+                } else {
+                    openCodeServer.appendLog("Ubuntu rootfs ready, proceeding to OpenCode engine setup...")
+                    installOpenCodePipeline()
+                    return@launch
+                }
             }
 
-            // Step 1 & 2: Install Ubuntu rootfs
+            // 3. Download & Extract Ubuntu rootfs
             updateStep(0, SetupStepStatus.IN_PROGRESS)
-            _overallProgress.value = 0.1f
+            _overallProgress.value = 0.05f
 
             ubuntuInstaller.installUbuntu().collect { progress ->
                 when (progress) {
@@ -91,28 +104,17 @@ class SetupViewModel @Inject constructor(
                         updateStep(0, SetupStepStatus.IN_PROGRESS, progress.percent)
                         _currentSpeed.value = progress.speedText
                         _currentEta.value = progress.etaText
-                        _overallProgress.value = (progress.percent * 0.4f) / 100f
+                        _overallProgress.value = (progress.percent * 0.35f) / 100f
                     }
                     is InstallProgress.Extracting -> {
                         updateStep(0, SetupStepStatus.COMPLETED)
                         updateStep(1, SetupStepStatus.IN_PROGRESS, progress.percent)
-                        _overallProgress.value = 0.4f + (progress.percent * 0.3f) / 100f
-                    }
-                    is InstallProgress.InstallingDependencies -> {
-                        updateStep(1, SetupStepStatus.COMPLETED)
-                        updateStep(2, SetupStepStatus.IN_PROGRESS)
-                        _overallProgress.value = 0.75f
-                    }
-                    is InstallProgress.StartingServer -> {
-                        updateStep(2, SetupStepStatus.COMPLETED)
-                        updateStep(3, SetupStepStatus.IN_PROGRESS)
-                        _overallProgress.value = 0.9f
+                        _overallProgress.value = 0.35f + (progress.percent * 0.25f) / 100f
                     }
                     is InstallProgress.Success -> {
                         updateStep(0, SetupStepStatus.COMPLETED)
                         updateStep(1, SetupStepStatus.COMPLETED)
 
-                        // Inspect RootFS structure and verify bash
                         openCodeServer.appendLog("=== Inspecting RootFS Structure ===")
                         ubuntuInstaller.inspectRootfs().forEach { line ->
                             openCodeServer.appendLog("[RootFS] $line")
@@ -130,7 +132,7 @@ class SetupViewModel @Inject constructor(
 
                         if (testExit == 0 && bashVerified) {
                             openCodeServer.appendLog("Ubuntu PRoot bash verification passed!")
-                            installOpenCodeStep()
+                            installOpenCodePipeline()
                         } else {
                             val err = "Ubuntu bash test failed (exit code $testExit). Incomplete rootfs."
                             openCodeServer.appendLog("ERROR: $err")
@@ -143,40 +145,92 @@ class SetupViewModel @Inject constructor(
                         _errorMessage.value = progress.error
                         updateStep(0, SetupStepStatus.ERROR)
                     }
+                    else -> {}
                 }
             }
         }
     }
 
-    private fun installOpenCodeStep() {
+    private fun installOpenCodePipeline() {
         viewModelScope.launch {
+            // Sub-step 1: Dependencies (apt)
             updateStep(2, SetupStepStatus.IN_PROGRESS)
-            _overallProgress.value = 0.75f
-
-            val success = openCodeServer.installOpenCode { log ->
-                openCodeServer.appendLog(log)
+            _overallProgress.value = 0.65f
+            val depSuccess = openCodeServer.installDependencies { line ->
+                openCodeServer.appendLog(line)
             }
-
-            if (success) {
-                updateStep(2, SetupStepStatus.COMPLETED)
-                startServerStep()
-            } else {
+            if (!depSuccess) {
                 updateStep(2, SetupStepStatus.ERROR)
-                _errorMessage.value = "Failed to install OpenCode engine"
+                _errorMessage.value = "Failed to install system dependencies (apt)"
+                return@launch
             }
+            updateStep(2, SetupStepStatus.COMPLETED)
+
+            // Sub-step 2: Node.js LTS
+            updateStep(3, SetupStepStatus.IN_PROGRESS)
+            _overallProgress.value = 0.75f
+            val nodeSuccess = openCodeServer.installNode { line ->
+                openCodeServer.appendLog(line)
+            }
+            if (!nodeSuccess) {
+                updateStep(3, SetupStepStatus.ERROR)
+                _errorMessage.value = "Failed to install Node.js LTS"
+                return@launch
+            }
+            updateStep(3, SetupStepStatus.COMPLETED)
+
+            // Sub-step 3: OpenCode Engine
+            updateStep(4, SetupStepStatus.IN_PROGRESS)
+            _overallProgress.value = 0.85f
+            val engineSuccess = openCodeServer.installOpenCodeEngine { line ->
+                openCodeServer.appendLog(line)
+            }
+            if (!engineSuccess) {
+                updateStep(4, SetupStepStatus.ERROR)
+                _errorMessage.value = "Failed to install OpenCode engine"
+                return@launch
+            }
+            updateStep(4, SetupStepStatus.COMPLETED)
+
+            // Sub-step 4: Verify and Start Server
+            startServerStep()
         }
     }
 
     private fun startServerStep() {
         viewModelScope.launch {
-            updateStep(3, SetupStepStatus.IN_PROGRESS)
-            _overallProgress.value = 0.9f
+            updateStep(5, SetupStepStatus.IN_PROGRESS)
+            _overallProgress.value = 0.92f
 
-            openCodeServer.startServer()
-            updateStep(3, SetupStepStatus.COMPLETED)
-            _overallProgress.value = 1f
-            preferencesManager.setSetupCompleted(true)
-            _isComplete.value = true
+            val (verified, versionStr) = openCodeServer.verifyOpenCode { line ->
+                openCodeServer.appendLog(line)
+            }
+            if (!verified) {
+                openCodeServer.appendLog("Warning: opencode --version output: $versionStr")
+            }
+
+            val healthy = openCodeServer.startServerAndWaitHealth(timeoutSeconds = 15)
+            if (healthy) {
+                updateStep(5, SetupStepStatus.COMPLETED)
+                _overallProgress.value = 1f
+                preferencesManager.setSetupCompleted(true)
+                _isComplete.value = true
+            } else {
+                updateStep(5, SetupStepStatus.ERROR)
+                _errorMessage.value = "Server started but failed health check on loopback"
+            }
+        }
+    }
+
+    fun reinstallOpenCode() {
+        viewModelScope.launch {
+            _errorMessage.value = null
+            openCodeServer.cleanOpenCode()
+            updateStep(2, SetupStepStatus.PENDING)
+            updateStep(3, SetupStepStatus.PENDING)
+            updateStep(4, SetupStepStatus.PENDING)
+            updateStep(5, SetupStepStatus.PENDING)
+            installOpenCodePipeline()
         }
     }
 
