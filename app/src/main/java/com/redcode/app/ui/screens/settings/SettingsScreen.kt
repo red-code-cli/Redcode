@@ -395,11 +395,10 @@ private fun HeartbeatMonitorCard(
 
             // Canvas Waveform
             EcgHeartbeatView(
+                isConnected = isConnected,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(72.dp),
-                isConnected = isConnected,
-                latencyMs = latencyMs
+                    .height(72.dp)
             )
 
             Spacer(modifier = Modifier.height(10.dp))

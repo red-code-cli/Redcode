@@ -45,15 +45,20 @@ class SettingsViewModel @Inject constructor(
     private val _isRestarting = MutableStateFlow(false)
     private val _changelogReleases = MutableStateFlow<List<ChangelogRelease>>(emptyList())
 
-    val uiState: StateFlow<SettingsUiState> = combine(
-        healthMonitor.healthState,
+    private val serverSettings = combine(
         preferencesManager.serverHost,
         preferencesManager.serverPort,
-        preferencesManager.selectedLanguage,
+        preferencesManager.selectedLanguage
+    ) { host, port, language -> Triple(host, port, language) }
+
+    val uiState: StateFlow<SettingsUiState> = combine(
+        healthMonitor.healthState,
+        serverSettings,
         preferencesManager.experimentalSettings,
         _changelogReleases,
         _isRestarting
-    ) { health, host, port, language, experimental, changelog, restarting ->
+    ) { health, server, experimental, changelog, restarting ->
+        val (host, port, language) = server
         SettingsUiState(
             health = health,
             serverHost = host,
@@ -124,15 +129,15 @@ class SettingsViewModel @Inject constructor(
     fun restartServer() {
         viewModelScope.launch {
             _isRestarting.value = true
-            openCodeServer.stop()
-            openCodeServer.start()
+            openCodeServer.stopServer()
+            openCodeServer.startServer()
             _isRestarting.value = false
         }
     }
 
     fun resetSetup(onResetDone: () -> Unit) {
         viewModelScope.launch {
-            openCodeServer.stop()
+            openCodeServer.stopServer()
             preferencesManager.setSetupCompleted(false)
             onResetDone()
         }

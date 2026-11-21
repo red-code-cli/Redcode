@@ -36,7 +36,7 @@ class MainViewModel @Inject constructor(
 
     fun refreshSessions() {
         viewModelScope.launch {
-            repository.syncSessions()
+            repository.refreshSessions()
         }
     }
 }

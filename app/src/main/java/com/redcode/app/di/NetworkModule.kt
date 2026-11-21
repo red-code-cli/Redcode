@@ -8,6 +8,7 @@ import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -26,7 +27,7 @@ object NetworkModule {
         val authInterceptor = BasicAuthInterceptor {
             runBlocking {
                 // Return password stored in DataStore
-                kotlinx.coroutines.flow.firstOrNull(preferencesManager.serverPassword).orEmpty()
+                preferencesManager.serverPassword.firstOrNull().orEmpty()
             }
         }
 
