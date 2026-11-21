@@ -15,8 +15,11 @@ import com.redcode.app.data.model.SessionSummary
 import com.redcode.app.data.model.SlashCommand
 import com.redcode.app.data.model.ToolInvocation
 import com.redcode.app.data.remote.ApiCreateSessionRequest
+import com.redcode.app.data.remote.ApiModelRef
 import com.redcode.app.data.remote.ApiPromptRequest
 import com.redcode.app.data.remote.ApiRenameSessionRequest
+import com.redcode.app.data.remote.ApiSetAgentRequest
+import com.redcode.app.data.remote.ApiSetModelRequest
 import com.redcode.app.data.remote.OpenCodeApiService
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
@@ -108,10 +111,20 @@ class OpenCodeRepository @Inject constructor(
             val response = apiService.getSessionMessages(sessionId)
             if (response.isSuccessful && response.body() != null) {
                 val entities = response.body()!!.data.map { apiMsg ->
-                    val textContent = when (apiMsg.type) {
-                        "user" -> apiMsg.text.orEmpty()
-                        "assistant" -> apiMsg.content?.filter { it.type == "text" }?.joinToString("\n\n") { it.text.orEmpty() }.orEmpty()
-                        else -> ""
+                    val (textContent, role) = when (apiMsg.type) {
+                        "user" -> Pair(apiMsg.text.orEmpty(), "USER")
+                        "assistant" -> {
+                            val text = apiMsg.content?.filter { it.type == "text" }?.joinToString("\n\n") { it.text.orEmpty() }.orEmpty()
+                            val errText = apiMsg.error?.message ?: apiMsg.retry?.error?.message
+                            if (text.isBlank() && !errText.isNullOrBlank()) {
+                                Pair(errText, "ERROR")
+                            } else if (text.isNotBlank() && !errText.isNullOrBlank()) {
+                                Pair("$text\n\n[Error: $errText]", "ASSISTANT")
+                            } else {
+                                Pair(text, "ASSISTANT")
+                            }
+                        }
+                        else -> Pair(apiMsg.text.orEmpty(), "SYSTEM")
                     }
                     val tools = apiMsg.content?.filter { it.type == "tool" }?.map { part ->
                         val inputMap = part.input ?: emptyMap()
@@ -133,7 +146,7 @@ class OpenCodeRepository @Inject constructor(
                     MessageEntity(
                         id = apiMsg.id,
                         sessionId = sessionId,
-                        role = apiMsg.type.uppercase(),
+                        role = role,
                         content = textContent,
                         toolsJson = if (tools.isNotEmpty()) gson.toJson(tools) else "",
                         sourcesJson = "",
@@ -210,10 +223,89 @@ class OpenCodeRepository @Inject constructor(
         return try {
             val response = apiService.sendPrompt(sessionId, ApiPromptRequest(text = text))
             if (response.isSuccessful) {
-                refreshMessages(sessionId)
                 Result.success(Unit)
             } else {
-                Result.failure(Exception("Failed to send message: ${response.code()}"))
+                val errorBody = response.errorBody()?.string()
+                Result.failure(Exception("Failed to send message (${response.code()}): ${errorBody ?: "Unknown error"}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun appendStreamingDelta(sessionId: String, messageId: String, delta: String) {
+        val existing = messageDao.getMessagesForSessionList(sessionId).find { it.id == messageId }
+        val updated = if (existing != null) {
+            existing.copy(content = existing.content + delta)
+        } else {
+            MessageEntity(
+                id = messageId,
+                sessionId = sessionId,
+                role = "ASSISTANT",
+                content = delta,
+                timestamp = System.currentTimeMillis()
+            )
+        }
+        messageDao.insertMessage(updated)
+    }
+
+    suspend fun finalizeAssistantMessage(sessionId: String, messageId: String, text: String) {
+        val existing = messageDao.getMessagesForSessionList(sessionId).find { it.id == messageId }
+        val updated = existing?.copy(content = text) ?: MessageEntity(
+            id = messageId,
+            sessionId = sessionId,
+            role = "ASSISTANT",
+            content = text,
+            timestamp = System.currentTimeMillis()
+        )
+        messageDao.insertMessage(updated)
+    }
+
+    suspend fun recordErrorMessage(sessionId: String, errorText: String) {
+        val entity = MessageEntity(
+            id = "err_${System.currentTimeMillis()}",
+            sessionId = sessionId,
+            role = "ERROR",
+            content = errorText,
+            timestamp = System.currentTimeMillis()
+        )
+        messageDao.insertMessage(entity)
+    }
+
+    suspend fun setSessionModel(sessionId: String, modelId: String, providerId: String): Result<Unit> {
+        return try {
+            val res = apiService.setSessionModel(sessionId, ApiSetModelRequest(ApiModelRef(id = modelId, providerID = providerId)))
+            if (res.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to set model: ${res.code()}"))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun setSessionAgent(sessionId: String, agent: String): Result<Unit> {
+        return try {
+            val res = apiService.setSessionAgent(sessionId, ApiSetAgentRequest(agent = agent))
+            if (res.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to set agent: ${res.code()}"))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getSessionDetail(sessionId: String): Result<SessionSummary> {
+        return try {
+            val res = apiService.getSessionDetail(sessionId)
+            if (res.isSuccessful && res.body() != null) {
+                val s = res.body()!!.data
+                val summary = SessionSummary(
+                    id = s.id,
+                    title = s.title ?: "Untitled",
+                    project = s.projectID ?: "",
+                    snippet = "",
+                    timeAgo = "recently",
+                    updatedAt = s.time?.updated ?: System.currentTimeMillis()
+                )
+                Result.success(summary)
+            } else {
+                Result.failure(Exception("HTTP ${res.code()}"))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -430,6 +522,7 @@ class OpenCodeRepository @Inject constructor(
             role = when (role.uppercase()) {
                 "USER" -> MessageRole.USER
                 "SYSTEM" -> MessageRole.SYSTEM
+                "ERROR" -> MessageRole.ERROR
                 else -> MessageRole.ASSISTANT
             },
             content = content,

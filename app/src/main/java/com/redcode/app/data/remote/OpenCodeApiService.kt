@@ -51,6 +51,12 @@ interface OpenCodeApiService {
     @POST("/api/session/{id}/prompt")
     suspend fun sendPrompt(@Path("id") sessionId: String, @Body body: ApiPromptRequest): Response<ApiPromptResponse>
 
+    @POST("/api/session/{id}/model")
+    suspend fun setSessionModel(@Path("id") sessionId: String, @Body body: ApiSetModelRequest): Response<Unit>
+
+    @POST("/api/session/{id}/agent")
+    suspend fun setSessionAgent(@Path("id") sessionId: String, @Body body: ApiSetAgentRequest): Response<Unit>
+
     @GET("/api/model")
     suspend fun getModels(): Response<ApiModelListResponse>
 
@@ -143,7 +149,35 @@ data class ApiMessageEntry(
     @SerializedName("content") val content: List<ApiContentPart>? = null, // for type "assistant"
     @SerializedName("time") val time: ApiMessageTime? = null,
     @SerializedName("agent") val agent: String? = null,
-    @SerializedName("model") val model: ApiSessionModel? = null
+    @SerializedName("model") val model: ApiSessionModel? = null,
+    @SerializedName("error") val error: ApiStructuredError? = null,
+    @SerializedName("retry") val retry: ApiMessageRetry? = null
+)
+
+data class ApiStructuredError(
+    @SerializedName("type") val type: String? = null,
+    @SerializedName("message") val message: String? = null,
+    @SerializedName("status") val status: Int? = null,
+    @SerializedName("retryAfterMs") val retryAfterMs: Long? = null
+)
+
+data class ApiMessageRetry(
+    @SerializedName("attempt") val attempt: Int? = null,
+    @SerializedName("error") val error: ApiStructuredError? = null
+)
+
+data class ApiSetModelRequest(
+    @SerializedName("model") val model: ApiModelRef
+)
+
+data class ApiModelRef(
+    @SerializedName("id") val id: String,
+    @SerializedName("providerID") val providerID: String,
+    @SerializedName("variant") val variant: String? = null
+)
+
+data class ApiSetAgentRequest(
+    @SerializedName("agent") val agent: String
 )
 
 data class ApiMessageTime(

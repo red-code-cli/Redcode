@@ -274,9 +274,12 @@ EOF
 
         val cmd = listOf(
             "/bin/bash", "-lc",
-            "export OPENCODE_SERVER_PASSWORD=\"$password\" && opencode serve --hostname $host --port $port"
+            "export OPENCODE_SERVER_PASSWORD=\"$password\" && export OPENCODE_PASSWORD=\"$password\" && opencode serve --hostname $host --port $port"
         )
-        val extraEnv = mapOf("OPENCODE_SERVER_PASSWORD" to password)
+        val extraEnv = mapOf(
+            "OPENCODE_SERVER_PASSWORD" to password,
+            "OPENCODE_PASSWORD" to password
+        )
 
         try {
             serverProcess = prootRunner.startProcess(cmd, extraEnv)
@@ -347,13 +350,19 @@ EOF
         appendLog("Server stopped by user.")
     }
 
-    private fun checkHttpHealth(host: String, port: Int): Boolean {
+    private suspend fun checkHttpHealth(host: String, port: Int): Boolean {
         return try {
-            val url = URL("http://$host:$port/global/health")
+            val password = preferencesManager.serverPassword.firstOrNull().orEmpty()
+            val url = URL("http://$host:$port/api/info")
             val conn = url.openConnection() as HttpURLConnection
-            conn.connectTimeout = 1500
-            conn.readTimeout = 1500
+            conn.connectTimeout = 2000
+            conn.readTimeout = 2000
             conn.requestMethod = "GET"
+            if (password.isNotBlank()) {
+                val credentials = "opencode:$password"
+                val basicAuth = "Basic " + android.util.Base64.encodeToString(credentials.toByteArray(), android.util.Base64.NO_WRAP)
+                conn.setRequestProperty("Authorization", basicAuth)
+            }
             val code = conn.responseCode
             conn.disconnect()
             code in 200..499 // Any HTTP response (including 401 Unauthorized) proves server daemon is alive!

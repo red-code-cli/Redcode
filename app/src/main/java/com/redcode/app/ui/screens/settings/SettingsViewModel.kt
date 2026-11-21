@@ -9,6 +9,7 @@ import com.redcode.app.data.local.PreferencesManager
 import com.redcode.app.data.model.ChangelogRelease
 import com.redcode.app.data.model.ExperimentalSettings
 import com.redcode.app.data.model.ServerHealthState
+import com.redcode.app.data.remote.OpenCodeSseClient
 import com.redcode.app.runtime.HealthMonitor
 import com.redcode.app.runtime.OpenCodeServer
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -40,8 +41,12 @@ class SettingsViewModel @Inject constructor(
     private val preferencesManager: PreferencesManager,
     private val healthMonitor: HealthMonitor,
     private val openCodeServer: OpenCodeServer,
+    private val sseClient: OpenCodeSseClient,
     private val gson: Gson
 ) : ViewModel() {
+
+    val serverLogs: StateFlow<List<String>> = openCodeServer.terminalLogs
+    val sseEvents: StateFlow<List<String>> = sseClient.last50Events
 
     private val _isRestarting = MutableStateFlow(false)
     private val _changelogReleases = MutableStateFlow<List<ChangelogRelease>>(emptyList())
@@ -87,6 +92,8 @@ class SettingsViewModel @Inject constructor(
 
     init {
         loadChangelog()
+        healthMonitor.startMonitoring()
+        healthMonitor.checkHealthNow()
     }
 
     private fun loadChangelog() {

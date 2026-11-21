@@ -1,5 +1,9 @@
 package com.redcode.app.ui.screens.settings
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,10 +17,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -76,8 +85,14 @@ fun SettingsScreen(
     onResetCompleted: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
+    val serverLogs by viewModel.serverLogs.collectAsState()
+    val sseEvents by viewModel.sseEvents.collectAsState()
+    val context = LocalContext.current
+
     var showResetDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
+    var showServerLogsDialog by remember { mutableStateOf(false) }
+    var showEventsDialog by remember { mutableStateOf(false) }
 
     val themeOptions = listOf("Dark (Pure OLED)", "Dark (Charcoal)", "Light", "System Default")
 
@@ -227,7 +242,31 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // 4. What's New & Experiments Cards
+            // Developer & Debug Group
+            SectionHeader(title = "DEVELOPER & DEBUG")
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                color = RedcodeCardBackground
+            ) {
+                Column {
+                    SettingsRow(
+                        icon = Icons.Default.Code,
+                        title = "Server Log",
+                        subtitle = "Last ${serverLogs.takeLast(100).size} lines from daemon",
+                        onClick = { showServerLogsDialog = true }
+                    )
+                    SettingsDivider()
+                    SettingsRow(
+                        icon = Icons.Default.Refresh,
+                        title = "Last 50 Events",
+                        subtitle = "Raw SSE event stream (${sseEvents.size} events)",
+                        onClick = { showEventsDialog = true }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
             SectionHeader(title = "UPDATES & LABS")
             Surface(
                 modifier = Modifier.fillMaxWidth(),
@@ -386,6 +425,108 @@ fun SettingsScreen(
             dismissButton = {
                 TextButton(onClick = { showResetDialog = false }) {
                     Text("Cancel", color = RedcodeTextPrimary)
+                }
+            },
+            containerColor = RedcodeCardBackground
+        )
+    }
+
+    if (showServerLogsDialog) {
+        val last100 = serverLogs.takeLast(100)
+        AlertDialog(
+            onDismissRequest = { showServerLogsDialog = false },
+            title = { Text("Server Log (Last 100 lines)", color = RedcodeTextPrimary) },
+            text = {
+                val listState = rememberLazyListState()
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp)
+                        .background(Color(0xFF1C1C1E), RoundedCornerShape(8.dp))
+                        .padding(8.dp)
+                ) {
+                    if (last100.isEmpty()) {
+                        Text("No logs available yet.", color = RedcodeTextSecondary, fontSize = 12.sp)
+                    } else {
+                        LazyColumn(state = listState) {
+                            items(last100) { line ->
+                                Text(
+                                    text = line,
+                                    color = Color(0xFFC0C0C0),
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    lineHeight = 15.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Server Logs", last100.joinToString("\n")))
+                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Text("Copy", color = RedcodeAccentBlue)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showServerLogsDialog = false }) {
+                    Text("Close", color = RedcodeTextSecondary)
+                }
+            },
+            containerColor = RedcodeCardBackground
+        )
+    }
+
+    if (showEventsDialog) {
+        AlertDialog(
+            onDismissRequest = { showEventsDialog = false },
+            title = { Text("Last 50 Events (Raw)", color = RedcodeTextPrimary) },
+            text = {
+                val listState = rememberLazyListState()
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp)
+                        .background(Color(0xFF1C1C1E), RoundedCornerShape(8.dp))
+                        .padding(8.dp)
+                ) {
+                    if (sseEvents.isEmpty()) {
+                        Text("No SSE events received yet.", color = RedcodeTextSecondary, fontSize = 12.sp)
+                    } else {
+                        LazyColumn(state = listState) {
+                            items(sseEvents) { ev ->
+                                Text(
+                                    text = ev,
+                                    color = Color(0xFF81D4FA),
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    lineHeight = 15.sp
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("SSE Events", sseEvents.joinToString("\n\n")))
+                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Text("Copy", color = RedcodeAccentBlue)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEventsDialog = false }) {
+                    Text("Close", color = RedcodeTextSecondary)
                 }
             },
             containerColor = RedcodeCardBackground

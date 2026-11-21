@@ -27,6 +27,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowUpward
@@ -86,9 +87,9 @@ fun FixedComposer(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 10.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
             .background(ComposerBg, RoundedCornerShape(24.dp))
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(start = 16.dp, end = 14.dp, top = 12.dp, bottom = 12.dp)
             .animateContentSize(
                 animationSpec = spring(
                     dampingRatio = Spring.DampingRatioNoBouncy,
@@ -272,13 +273,13 @@ fun FixedComposer(
                         }
                     }
 
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
 
                     // Model Chip with Ellipsis and bounded width
                     Row(
                         modifier = Modifier
                             .clickable(onClick = onModelClick)
-                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                            .padding(horizontal = 4.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         val displayModel = if (selectedModel.isNotBlank()) selectedModel else "Model"
@@ -289,7 +290,7 @@ fun FixedComposer(
                             fontWeight = FontWeight.Medium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.widthIn(max = 140.dp)
+                            modifier = Modifier.widthIn(max = 110.dp)
                         )
                         Icon(
                             imageVector = Icons.Default.KeyboardArrowDown,
@@ -302,9 +303,15 @@ fun FixedComposer(
                     Spacer(modifier = Modifier.weight(1f))
 
                     // Mic Button
-                    IconButton(
-                        onClick = onStartRecording,
-                        modifier = Modifier.size(32.dp)
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .clickable(
+                                role = androidx.compose.ui.semantics.Role.Button,
+                                onClick = onStartRecording
+                            ),
+                        contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Mic,
@@ -314,9 +321,9 @@ fun FixedComposer(
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
 
-                    // Send Arrow Button with animated enabled/disabled transition
+                    // Send Arrow Button with animated enabled/disabled transition and unclipped rounded corners
                     val canSend = text.isNotBlank()
                     val sendBg by animateColorAsState(
                         targetValue = if (canSend) Color(0xFF3A3A3C) else Color(0xFF28282A),
@@ -329,12 +336,18 @@ fun FixedComposer(
                         label = "send_tint"
                     )
 
-                    IconButton(
-                        onClick = { if (canSend) onSend() },
-                        enabled = canSend,
+                    Box(
                         modifier = Modifier
+                            .padding(end = 2.dp)
                             .size(36.dp)
-                            .background(sendBg, RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(sendBg)
+                            .clickable(
+                                enabled = canSend,
+                                role = androidx.compose.ui.semantics.Role.Button,
+                                onClick = { if (canSend) onSend() }
+                            ),
+                        contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.ArrowUpward,

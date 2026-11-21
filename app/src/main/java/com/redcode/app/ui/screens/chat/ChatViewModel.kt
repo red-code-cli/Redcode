@@ -1,11 +1,13 @@
 package com.redcode.app.ui.screens.chat
 
+import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.redcode.app.data.local.PreferencesManager
 import com.redcode.app.data.model.MentionItem
 import com.redcode.app.data.model.MessageItem
+import com.redcode.app.data.model.MessageRole
 import com.redcode.app.data.model.ModelItem
 import com.redcode.app.data.model.SessionSummary
 import com.redcode.app.data.model.SlashCommand
@@ -13,13 +15,17 @@ import com.redcode.app.data.remote.OpenCodeSseClient
 import com.redcode.app.data.remote.SseEvent
 import com.redcode.app.data.repository.OpenCodeRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 import javax.inject.Inject
 
 @HiltViewModel
@@ -71,6 +77,9 @@ class ChatViewModel @Inject constructor(
         subscribeToSse()
     }
 
+    private var sseJob: Job? = null
+    private var pollingJob: Job? = null
+
     private fun loadSessionData() {
         viewModelScope.launch {
             repository.sessionsFlow.collect { list ->
@@ -85,32 +94,108 @@ class ChatViewModel @Inject constructor(
     }
 
     private fun subscribeToSse() {
-        viewModelScope.launch {
-            val port = preferencesManager.serverPort.firstOrNull() ?: 49374
-            val host = preferencesManager.serverHost.firstOrNull() ?: "127.0.0.1"
-            val password = preferencesManager.serverPassword.firstOrNull().orEmpty()
-            val url = "http://$host:$port/api/event"
+        sseJob?.cancel()
+        sseJob = viewModelScope.launch {
+            var backoffMs = 1000L
+            while (isActive) {
+                val port = preferencesManager.serverPort.firstOrNull() ?: 49374
+                val host = preferencesManager.serverHost.firstOrNull() ?: "127.0.0.1"
+                val password = preferencesManager.serverPassword.firstOrNull().orEmpty()
+                val url = "http://$host:$port/api/event"
 
-            try {
-                sseClient.observeEventStream(url, password).collect { event ->
-                    when (event) {
-                        is SseEvent.Message -> {
-                            if (event.type?.contains("message") == true || event.type?.contains("session") == true) {
+                try {
+                    Log.d("ChatViewModel", "Connecting to SSE: $url")
+                    sseClient.observeEventStream(url, password).collect { event ->
+                        when (event) {
+                            is SseEvent.Open -> {
+                                Log.d("ChatViewModel", "SSE Connected successfully")
+                                backoffMs = 1000L
                                 repository.refreshMessages(sessionId)
                             }
-                            if (event.type?.contains("busy") == true || event.type?.contains("start") == true) {
-                                _isAgentBusy.value = true
-                            } else if (event.type?.contains("idle") == true || event.type?.contains("completed") == true) {
-                                _isAgentBusy.value = false
+                            is SseEvent.Message -> {
+                                handleSseMessage(event.type, event.data)
+                            }
+                            is SseEvent.Failure -> {
+                                Log.w("ChatViewModel", "SSE Failure: ${event.throwable?.message}")
+                            }
+                            is SseEvent.Closed -> {
+                                Log.d("ChatViewModel", "SSE Closed, will retry")
                             }
                         }
-                        is SseEvent.Failure -> {
-                            _isAgentBusy.value = false
-                        }
-                        else -> {}
+                    }
+                } catch (e: Exception) {
+                    Log.e("ChatViewModel", "SSE connection loop error: ${e.message}")
+                }
+
+                delay(backoffMs)
+                backoffMs = (backoffMs * 2).coerceAtMost(15000L)
+            }
+        }
+    }
+
+    private fun handleSseMessage(type: String?, rawData: String) {
+        if (type.isNullOrBlank()) return
+        val json = try { JSONObject(rawData) } catch (_: Exception) { return }
+        val dataObj = json.optJSONObject("data")
+
+        val eventSessionId = dataObj?.optString("sessionID")
+        if (!eventSessionId.isNullOrBlank() && eventSessionId != sessionId) {
+            return
+        }
+
+        when (type) {
+            "server.connected" -> {
+                Log.d("ChatViewModel", "Server confirmed SSE stream connection")
+            }
+            "session.text.started", "session.execution.started", "session.step.started" -> {
+                _isAgentBusy.value = true
+            }
+            "session.text.delta" -> {
+                _isAgentBusy.value = true
+                val delta = dataObj?.optString("delta").orEmpty()
+                val msgId = dataObj?.optString("assistantMessageID").orEmpty()
+                if (delta.isNotEmpty() && msgId.isNotEmpty()) {
+                    viewModelScope.launch {
+                        repository.appendStreamingDelta(sessionId, msgId, delta)
                     }
                 }
-            } catch (_: Exception) { }
+            }
+            "session.text.ended" -> {
+                val finalText = dataObj?.optString("text").orEmpty()
+                val msgId = dataObj?.optString("assistantMessageID").orEmpty()
+                if (msgId.isNotEmpty()) {
+                    viewModelScope.launch {
+                        repository.finalizeAssistantMessage(sessionId, msgId, finalText)
+                    }
+                }
+            }
+            "session.tool.called", "session.tool.progress", "session.tool.success", "session.tool.failed" -> {
+                viewModelScope.launch {
+                    repository.refreshMessages(sessionId)
+                }
+            }
+            "session.idle", "session.execution.succeeded" -> {
+                _isAgentBusy.value = false
+                viewModelScope.launch {
+                    repository.refreshMessages(sessionId)
+                }
+            }
+            "session.execution.failed" -> {
+                _isAgentBusy.value = false
+                val errObj = dataObj?.optJSONObject("error")
+                val errMsg = errObj?.optString("message") ?: "Execution failed"
+                viewModelScope.launch {
+                    repository.recordErrorMessage(sessionId, errMsg)
+                    repository.refreshMessages(sessionId)
+                }
+            }
+            else -> {
+                if (type.contains("message") || type.contains("session")) {
+                    viewModelScope.launch {
+                        repository.refreshMessages(sessionId)
+                    }
+                }
+            }
         }
     }
 
@@ -131,13 +216,49 @@ class ChatViewModel @Inject constructor(
     }
 
     fun sendMessage() {
-        val text = _inputText.value
+        val text = _inputText.value.trim()
         if (text.isBlank()) return
         _inputText.value = ""
         _isAgentBusy.value = true
 
         viewModelScope.launch {
-            repository.sendMessage(sessionId, text).onFailure {
+            // 1. Sync session model and agent before sending prompt
+            val selectedModelName = preferencesManager.selectedModel.firstOrNull().orEmpty()
+            val selectedModeName = preferencesManager.selectedMode.firstOrNull() ?: "Build"
+            val modelItem = _models.value.find { it.name == selectedModelName || it.id == selectedModelName }
+                ?: _models.value.firstOrNull()
+
+            if (modelItem != null) {
+                repository.setSessionModel(sessionId, modelItem.id, modelItem.provider)
+            }
+            repository.setSessionAgent(sessionId, selectedModeName.lowercase())
+
+            // 2. Send the message
+            val sendResult = repository.sendMessage(sessionId, text)
+            if (sendResult.isFailure) {
+                _isAgentBusy.value = false
+                val err = sendResult.exceptionOrNull()?.message ?: "Failed to send message"
+                repository.recordErrorMessage(sessionId, err)
+                return@launch
+            }
+
+            // 3. Fallback: 1-second polling loop to ensure assistant reply is always captured
+            pollingJob?.cancel()
+            pollingJob = launch {
+                var attempts = 0
+                while (attempts < 60 && _isAgentBusy.value) {
+                    delay(1000L)
+                    attempts++
+                    val res = repository.refreshMessages(sessionId)
+                    val msgs = res.getOrNull()
+                    val lastMsg = msgs?.lastOrNull()
+                    if (lastMsg != null && lastMsg.role != MessageRole.USER) {
+                        if (lastMsg.content.isNotBlank() || lastMsg.tools.isNotEmpty() || lastMsg.role == MessageRole.ERROR) {
+                            _isAgentBusy.value = false
+                            break
+                        }
+                    }
+                }
                 _isAgentBusy.value = false
             }
         }

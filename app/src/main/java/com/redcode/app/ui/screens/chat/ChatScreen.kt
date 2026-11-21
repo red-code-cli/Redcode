@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerState
@@ -594,36 +595,63 @@ fun ChatScreen(
 
 @Composable
 private fun MessageRow(message: MessageItem) {
-    if (message.role == MessageRole.USER) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End
-        ) {
-            Box(
-                modifier = Modifier
-                    .background(UserBubbleBg, RoundedCornerShape(18.dp))
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
+    when (message.role) {
+        MessageRole.USER -> {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
             ) {
-                Text(
-                    text = message.content,
-                    color = TextPrimary,
-                    fontSize = 15.sp,
-                    lineHeight = 21.sp
-                )
+                Box(
+                    modifier = Modifier
+                        .background(UserBubbleBg, RoundedCornerShape(18.dp))
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
+                    Text(
+                        text = message.content,
+                        color = TextPrimary,
+                        fontSize = 15.sp,
+                        lineHeight = 21.sp
+                    )
+                }
             }
         }
-    } else {
-        // Assistant Message
-        Column(modifier = Modifier.fillMaxWidth()) {
-            if (message.tools.isNotEmpty()) {
-                ToolInvocationsGroup(
-                    tools = message.tools,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
+        MessageRole.ERROR -> {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF2A1515), RoundedCornerShape(16.dp))
+                    .padding(14.dp)
+            ) {
+                Row(verticalAlignment = Alignment.Top) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Error",
+                        tint = BrandRed,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = message.content,
+                        color = Color(0xFFFF8A80),
+                        fontSize = 14.sp,
+                        lineHeight = 19.sp
+                    )
+                }
             }
+        }
+        else -> {
+            // Assistant Message
+            Column(modifier = Modifier.fillMaxWidth()) {
+                if (message.tools.isNotEmpty()) {
+                    ToolInvocationsGroup(
+                        tools = message.tools,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                }
 
-            if (message.content.isNotBlank()) {
-                MarkdownContent(content = message.content)
+                if (message.content.isNotBlank()) {
+                    MarkdownContent(content = message.content)
+                }
             }
         }
     }

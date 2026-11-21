@@ -34,6 +34,10 @@ class HealthMonitor @Inject constructor(
     )
     val healthState: StateFlow<ServerHealthState> = _healthState.asStateFlow()
 
+    init {
+        startMonitoring()
+    }
+
     fun startMonitoring() {
         if (monitorJob?.isActive == true) return
         monitorJob = scope.launch {
@@ -41,6 +45,12 @@ class HealthMonitor @Inject constructor(
                 checkHealth()
                 delay(2000L)
             }
+        }
+    }
+
+    fun checkHealthNow() {
+        scope.launch {
+            checkHealth()
         }
     }
 
@@ -59,30 +69,20 @@ class HealthMonitor @Inject constructor(
             val response = apiService.getServerInfo()
             val latency = (System.currentTimeMillis() - startTime).coerceAtLeast(1L)
             if (response.isSuccessful && response.body() != null) {
+                val version = response.body()?.version?.let { "v$it" } ?: ""
                 _healthState.value = ServerHealthState(
                     isConnected = true,
                     latencyMs = latency,
                     address = addr,
-                    statusText = "Opencode"
+                    statusText = if (version.isNotBlank()) "Online ($version)" else "Online"
                 )
             } else {
-                val fbResponse = apiService.getGlobalHealth()
-                val fbLatency = (System.currentTimeMillis() - startTime).coerceAtLeast(1L)
-                if (fbResponse.isSuccessful) {
-                    _healthState.value = ServerHealthState(
-                        isConnected = true,
-                        latencyMs = fbLatency,
-                        address = addr,
-                        statusText = "Opencode"
-                    )
-                } else {
-                    _healthState.value = ServerHealthState(
-                        isConnected = false,
-                        latencyMs = 0L,
-                        address = addr,
-                        statusText = "Server Offline"
-                    )
-                }
+                _healthState.value = ServerHealthState(
+                    isConnected = false,
+                    latencyMs = 0L,
+                    address = addr,
+                    statusText = "Server Offline"
+                )
             }
         } catch (_: Exception) {
             _healthState.value = ServerHealthState(

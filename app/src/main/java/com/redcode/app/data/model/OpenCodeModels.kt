@@ -32,7 +32,8 @@ data class MessageItem(
 enum class MessageRole {
     USER,
     ASSISTANT,
-    SYSTEM
+    SYSTEM,
+    ERROR
 }
 
 data class ToolInvocation(
