@@ -43,7 +43,8 @@ data class ToolInvocation(
     val newString: String? = null,
     val path: String? = null,
     val result: String? = null,
-    val isFailed: Boolean = false
+    val isFailed: Boolean = false,
+    val isExpanded: Boolean = false
 )
 
 data class SourceItem(

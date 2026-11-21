@@ -115,7 +115,7 @@ private fun ToolCardItem(
     tool: ToolInvocation,
     onOpenFile: ((String) -> Unit)? = null
 ) {
-    var isExpanded by remember { mutableStateOf(tool.isExpanded) }
+    var isExpanded by remember { mutableStateOf<Boolean>(tool.isExpanded) }
 
     Column(
         modifier = Modifier
