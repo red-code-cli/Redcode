@@ -1,0 +1,39 @@
+[
+  {
+    "date": "21 November",
+    "version": "0.8.3",
+    "items": [
+      {
+        "title": "PRoot Ubuntu 22.04 Runtime",
+        "description": "Embedded PRoot execution directly from nativeLibraryDir with link2symlink and storage bind mounts.",
+        "color": "#E53935"
+      },
+      {
+        "title": "OpenCode v2 Engine Client",
+        "description": "Real-time communication with local OpenCode v2 API, session management, and SSE streaming.",
+        "color": "#3D5AFE"
+      },
+      {
+        "title": "ECG Latency Monitor",
+        "description": "60 FPS custom Canvas dot-matrix heartbeat graph measuring loopback ping in real-time.",
+        "color": "#00E676"
+      }
+    ]
+  },
+  {
+    "date": "20 November",
+    "version": "0.8.0",
+    "items": [
+      {
+        "title": "Jetpack Compose Architecture",
+        "description": "Native Material 3 pure dark theme with pixel-faithful components, fluid animations and sheets.",
+        "color": "#3D5AFE"
+      },
+      {
+        "title": "Foreground Service Lifecycle",
+        "description": "Persistent background service with partial wake-lock keeping the runtime alive reliably.",
+        "color": "#AB47BC"
+      }
+    ]
+  }
+]
