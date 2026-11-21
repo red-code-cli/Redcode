@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -76,21 +78,25 @@ fun FixedComposer(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 10.dp)
+            .navigationBarsPadding()
+            .imePadding()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
             .background(ComposerBg, RoundedCornerShape(24.dp))
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(start = 12.dp, top = 10.dp, end = 12.dp, bottom = 12.dp)
     ) {
         if (isRecording) {
             // Voice Recording Row
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 IconButton(
                     onClick = onCancelRecording,
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(36.dp)
                         .background(SurfaceCardElevated, CircleShape)
                 ) {
                     Icon(
@@ -112,7 +118,7 @@ fun FixedComposer(
                 IconButton(
                     onClick = onStopRecording,
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(36.dp)
                         .background(SurfaceCardElevated, CircleShape)
                 ) {
                     Icon(
@@ -128,14 +134,14 @@ fun FixedComposer(
                 IconButton(
                     onClick = onSend,
                     modifier = Modifier
-                        .size(40.dp)
-                        .background(Color(0xFF3A3A3C), CircleShape)
+                        .size(36.dp)
+                        .background(Color(0xFF3A3A3C), RoundedCornerShape(12.dp))
                 ) {
                     Icon(
                         imageVector = Icons.Default.ArrowUpward,
                         contentDescription = "Send",
                         tint = TextPrimary,
-                        modifier = Modifier.size(22.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
@@ -170,7 +176,9 @@ fun FixedComposer(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // + / X button with rotation animation

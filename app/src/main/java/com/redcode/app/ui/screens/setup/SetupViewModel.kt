@@ -7,6 +7,7 @@ import com.redcode.app.data.model.SetupStepItem
 import com.redcode.app.data.model.SetupStepStatus
 import com.redcode.app.runtime.InstallProgress
 import com.redcode.app.runtime.OpenCodeServer
+import com.redcode.app.runtime.ProotRunner
 import com.redcode.app.runtime.UbuntuInstaller
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,7 +20,8 @@ import javax.inject.Inject
 class SetupViewModel @Inject constructor(
     private val ubuntuInstaller: UbuntuInstaller,
     private val openCodeServer: OpenCodeServer,
-    private val preferencesManager: PreferencesManager
+    private val preferencesManager: PreferencesManager,
+    private val prootRunner: ProotRunner
 ) : ViewModel() {
 
     private val _steps = MutableStateFlow(
@@ -56,6 +58,18 @@ class SetupViewModel @Inject constructor(
     fun startSetup() {
         viewModelScope.launch {
             _errorMessage.value = null
+
+            // Verify PRoot runtime self-check before starting
+            openCodeServer.appendLog("=== Verifying PRoot runtime binary ===")
+            val prootCheck = prootRunner.verifyProot()
+            if (prootCheck.isFailure) {
+                val err = "PRoot self-check failed: ${prootCheck.exceptionOrNull()?.message}"
+                openCodeServer.appendLog("ERROR: $err")
+                _errorMessage.value = err
+                updateStep(0, SetupStepStatus.ERROR)
+                return@launch
+            }
+            openCodeServer.appendLog("PRoot self-check passed: ${prootCheck.getOrNull()?.lines()?.firstOrNull() ?: "OK"}")
 
             // If already installed, skip directly to server start
             if (ubuntuInstaller.isRootfsInstalled) {
