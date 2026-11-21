@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.io.File
 import javax.inject.Inject
 
 @HiltViewModel
@@ -110,7 +111,33 @@ class SetupViewModel @Inject constructor(
                     is InstallProgress.Success -> {
                         updateStep(0, SetupStepStatus.COMPLETED)
                         updateStep(1, SetupStepStatus.COMPLETED)
-                        installOpenCodeStep()
+
+                        // Inspect RootFS structure and verify bash
+                        openCodeServer.appendLog("=== Inspecting RootFS Structure ===")
+                        ubuntuInstaller.inspectRootfs().forEach { line ->
+                            openCodeServer.appendLog("[RootFS] $line")
+                        }
+
+                        // Run PRoot bash self-test
+                        openCodeServer.appendLog("=== Verifying Ubuntu PRoot Shell ===")
+                        var bashVerified = false
+                        val testExit = prootRunner.executeScript("echo 'bash-ok'") { line ->
+                            openCodeServer.appendLog("[proot] $line")
+                            if (line.contains("bash-ok")) {
+                                bashVerified = true
+                            }
+                        }
+
+                        if (testExit == 0 && bashVerified) {
+                            openCodeServer.appendLog("Ubuntu PRoot bash verification passed!")
+                            installOpenCodeStep()
+                        } else {
+                            val err = "Ubuntu bash test failed (exit code $testExit). Incomplete rootfs."
+                            openCodeServer.appendLog("ERROR: $err")
+                            File(ubuntuInstaller.ubuntuDir, UbuntuInstaller.MARKER_FILE_NAME).delete()
+                            _errorMessage.value = err
+                            updateStep(1, SetupStepStatus.ERROR)
+                        }
                     }
                     is InstallProgress.Error -> {
                         _errorMessage.value = progress.error

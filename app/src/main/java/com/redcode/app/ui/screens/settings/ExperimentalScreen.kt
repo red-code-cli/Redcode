@@ -129,7 +129,7 @@ fun ExperimentalScreen(
 
             // Sub-toggles Card
             Text(
-                text = "INDIVIDUAL EXPERIMENTS",
+                text = "ACTIVE EXPERIMENTS",
                 style = MaterialTheme.typography.labelSmall.copy(
                     fontWeight = FontWeight.SemiBold,
                     color = RedcodeTextSecondary,
@@ -152,43 +152,15 @@ fun ExperimentalScreen(
                     )
                     ExpDivider()
                     ToggleRow(
-                        title = "Background Call Shortcut",
-                        description = "Quick widget access to call background agent sessions",
-                        checked = exp.backgroundCallShortcut,
-                        onCheckedChange = { viewModel.updateExperimentalSettings(exp.copy(backgroundCallShortcut = it)) }
-                    )
-                    ExpDivider()
-                    ToggleRow(
-                        title = "Session Delegator",
-                        description = "Allow OpenCode agent to branch and delegate subtasks",
-                        checked = exp.sessionDelegator,
-                        onCheckedChange = { viewModel.updateExperimentalSettings(exp.copy(sessionDelegator = it)) }
-                    )
-                    ExpDivider()
-                    ToggleRow(
-                        title = "Share Screen With Agents",
-                        description = "Stream live display context to agent tool invocation",
-                        checked = exp.shareScreenWithAgents,
-                        onCheckedChange = { viewModel.updateExperimentalSettings(exp.copy(shareScreenWithAgents = it)) }
-                    )
-                    ExpDivider()
-                    ToggleRow(
-                        title = "Inbox Sidebar",
-                        description = "Show compact sidebar drawer on wide displays",
-                        checked = exp.inboxSidebar,
-                        onCheckedChange = { viewModel.updateExperimentalSettings(exp.copy(inboxSidebar = it)) }
-                    )
-                    ExpDivider()
-                    ToggleRow(
                         title = "Session Live Updates",
-                        description = "Subscribe to SSE event stream for real-time tokens",
+                        description = "Subscribe to SSE event stream for real-time tokens and tool events",
                         checked = exp.sessionLiveUpdates,
                         onCheckedChange = { viewModel.updateExperimentalSettings(exp.copy(sessionLiveUpdates = it)) }
                     )
                     ExpDivider()
                     ToggleRow(
                         title = "Sound Effects & Haptics",
-                        description = "Play feedback audio on completion and clicks",
+                        description = "Play feedback audio on prompt completion and clicks",
                         checked = exp.soundEffects,
                         onCheckedChange = { viewModel.updateExperimentalSettings(exp.copy(soundEffects = it)) }
                     )
@@ -202,16 +174,9 @@ fun ExperimentalScreen(
                     ExpDivider()
                     ToggleRow(
                         title = "In-App Browser",
-                        description = "Open source documentation links within app tabs",
+                        description = "Open source documentation and GitHub links within app tabs",
                         checked = exp.inAppBrowser,
                         onCheckedChange = { viewModel.updateExperimentalSettings(exp.copy(inAppBrowser = it)) }
-                    )
-                    ExpDivider()
-                    ToggleRow(
-                        title = "Open Links by Server Address",
-                        description = "Route external URLs via local proxy server",
-                        checked = exp.openLinksByServerAddress,
-                        onCheckedChange = { viewModel.updateExperimentalSettings(exp.copy(openLinksByServerAddress = it)) }
                     )
                 }
             }

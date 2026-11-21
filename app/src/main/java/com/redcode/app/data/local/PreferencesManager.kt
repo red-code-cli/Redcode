@@ -34,6 +34,8 @@ class PreferencesManager @Inject constructor(
         val KEY_RECENT_MODELS = stringPreferencesKey("recent_models")
         val KEY_EXPERIMENTAL_SETTINGS = stringPreferencesKey("experimental_settings")
         val KEY_SELECTED_LANGUAGE = stringPreferencesKey("selected_language")
+        val KEY_SELECTED_THEME = stringPreferencesKey("selected_theme")
+        val KEY_MUTED_SESSIONS = stringPreferencesKey("muted_sessions")
     }
 
     val isSetupCompleted: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -66,6 +68,10 @@ class PreferencesManager @Inject constructor(
 
     val selectedMode: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[KEY_SELECTED_MODE] ?: "Build"
+    }
+
+    val selectedTheme: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[KEY_SELECTED_THEME] ?: "Dark (Pure OLED)"
     }
 
     val favoriteModels: Flow<Set<String>> = context.dataStore.data.map { prefs ->
@@ -101,6 +107,21 @@ class PreferencesManager @Inject constructor(
 
     val selectedLanguage: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[KEY_SELECTED_LANGUAGE] ?: "System Default"
+    }
+
+    val mutedSessions: Flow<Set<String>> = context.dataStore.data.map { prefs ->
+        val raw = prefs[KEY_MUTED_SESSIONS]
+        if (!raw.isNullOrBlank()) {
+            try {
+                gson.fromJson(raw, Array<String>::class.java).toSet()
+            } catch (_: Exception) { emptySet() }
+        } else emptySet()
+    }
+
+    suspend fun setSelectedTheme(theme: String) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_SELECTED_THEME] = theme
+        }
     }
 
     suspend fun setSelectedLanguage(language: String) {
@@ -151,7 +172,11 @@ class PreferencesManager @Inject constructor(
                 } catch (_: Exception) { mutableSetOf() }
             } else mutableSetOf()
 
-            if (set.contains(modelId)) set.remove(modelId) else set.add(modelId)
+            if (set.contains(modelId)) {
+                set.remove(modelId)
+            } else {
+                set.add(modelId)
+            }
             prefs[KEY_FAVORITE_MODELS] = gson.toJson(set)
         }
     }
@@ -167,8 +192,8 @@ class PreferencesManager @Inject constructor(
 
             list.remove(modelId)
             list.add(0, modelId)
-            val trimmed = list.take(10)
-            prefs[KEY_RECENT_MODELS] = gson.toJson(trimmed)
+            if (list.size > 10) list.removeAt(list.size - 1)
+            prefs[KEY_RECENT_MODELS] = gson.toJson(list)
         }
     }
 
@@ -176,5 +201,27 @@ class PreferencesManager @Inject constructor(
         context.dataStore.edit { prefs ->
             prefs[KEY_EXPERIMENTAL_SETTINGS] = gson.toJson(settings)
         }
+    }
+
+    suspend fun toggleSessionMute(sessionId: String): Boolean {
+        var isNowMuted = false
+        context.dataStore.edit { prefs ->
+            val raw = prefs[KEY_MUTED_SESSIONS]
+            val set = if (!raw.isNullOrBlank()) {
+                try {
+                    gson.fromJson(raw, Array<String>::class.java).toMutableSet()
+                } catch (_: Exception) { mutableSetOf() }
+            } else mutableSetOf()
+
+            if (set.contains(sessionId)) {
+                set.remove(sessionId)
+                isNowMuted = false
+            } else {
+                set.add(sessionId)
+                isNowMuted = true
+            }
+            prefs[KEY_MUTED_SESSIONS] = gson.toJson(set)
+        }
+        return isNowMuted
     }
 }

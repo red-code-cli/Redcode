@@ -13,7 +13,6 @@ import com.redcode.app.data.model.ModelItem
 import com.redcode.app.data.model.ProjectFolder
 import com.redcode.app.data.model.SessionSummary
 import com.redcode.app.data.model.SlashCommand
-import com.redcode.app.data.model.SourceItem
 import com.redcode.app.data.model.ToolInvocation
 import com.redcode.app.data.remote.ApiCreateSessionRequest
 import com.redcode.app.data.remote.ApiPromptRequest
@@ -43,6 +42,12 @@ class OpenCodeRepository @Inject constructor(
         messageDao.getMessagesForSession(sessionId).map { entities ->
             entities.map { it.toDomain(gson) }
         }
+
+    fun isSessionMuted(sessionId: String): Flow<Boolean> =
+        preferencesManager.mutedSessions.map { it.contains(sessionId) }
+
+    suspend fun toggleSessionMute(sessionId: String): Boolean =
+        preferencesManager.toggleSessionMute(sessionId)
 
     suspend fun refreshProjects(): Result<List<ProjectFolder>> {
         return try {
@@ -162,7 +167,6 @@ class OpenCodeRepository @Inject constructor(
                 sessionDao.insertSession(entity)
                 Result.success(entity.toDomain())
             } else {
-                // If offline, store local session
                 val localId = "ses_local_${System.currentTimeMillis()}"
                 val localEntity = SessionEntity(
                     id = localId,
@@ -218,10 +222,12 @@ class OpenCodeRepository @Inject constructor(
 
     suspend fun renameSession(sessionId: String, newTitle: String): Result<Unit> {
         sessionDao.updateTitle(sessionId, newTitle)
-        try {
+        return try {
             apiService.renameSession(sessionId, ApiRenameSessionRequest(newTitle))
-        } catch (_: Exception) { }
-        return Result.success(Unit)
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.success(Unit)
+        }
     }
 
     suspend fun togglePinSession(sessionId: String, currentPin: Boolean): Result<Unit> {
@@ -241,6 +247,20 @@ class OpenCodeRepository @Inject constructor(
             apiService.deleteSession(sessionId)
         } catch (_: Exception) { }
         return Result.success(Unit)
+    }
+
+    suspend fun compactSession(sessionId: String): Result<Unit> {
+        return try {
+            val res = apiService.compactSession(sessionId)
+            if (res.isSuccessful) {
+                refreshMessages(sessionId)
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception("Compact request failed: ${res.code()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
     suspend fun forkSession(sessionId: String): Result<SessionSummary> {
@@ -264,6 +284,33 @@ class OpenCodeRepository @Inject constructor(
             }
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    suspend fun exportSession(sessionId: String): Result<String> {
+        return try {
+            val response = apiService.exportSession(sessionId)
+            if (response.isSuccessful && response.body() != null) {
+                val jsonString = gson.toJson(response.body())
+                Result.success(jsonString)
+            } else {
+                // Local export fallback from Room DB
+                val session = sessionDao.getSessionById(sessionId)
+                val messages = messageDao.getMessagesForSessionList(sessionId)
+                val exportMap = mapOf(
+                    "session" to session,
+                    "messages" to messages
+                )
+                Result.success(gson.toJson(exportMap))
+            }
+        } catch (e: Exception) {
+            val session = sessionDao.getSessionById(sessionId)
+            val messages = messageDao.getMessagesForSessionList(sessionId)
+            val exportMap = mapOf(
+                "session" to session,
+                "messages" to messages
+            )
+            Result.success(gson.toJson(exportMap))
         }
     }
 

@@ -34,13 +34,16 @@ interface OpenCodeApiService {
     suspend fun deleteSession(@Path("id") sessionId: String): Response<Unit>
 
     @PATCH("/api/session/{id}")
-    suspend fun renameSession(@Path("id") sessionId: String, @Body body: ApiRenameSessionRequest): Response<ApiSessionDetailResponse>
+    suspend fun renameSession(@Path("id") sessionId: String, @Body body: ApiRenameSessionRequest): Response<Unit>
 
     @POST("/api/session/{id}/fork")
     suspend fun forkSession(@Path("id") sessionId: String): Response<ApiSessionDetailResponse>
 
     @POST("/api/session/{id}/compact")
     suspend fun compactSession(@Path("id") sessionId: String): Response<Unit>
+
+    @GET("/api/experimental/session/{id}/export")
+    suspend fun exportSession(@Path("id") sessionId: String): Response<Map<String, Any>>
 
     @GET("/api/session/{id}/message")
     suspend fun getSessionMessages(@Path("id") sessionId: String): Response<ApiMessageListResponse>
@@ -149,7 +152,7 @@ data class ApiMessageTime(
 )
 
 data class ApiContentPart(
-    @SerializedName("type") val type: String, // "text", "reasoning", "tool"
+    @SerializedName("type") val type: String, // "text", "tool", "source"
     @SerializedName("text") val text: String? = null,
     @SerializedName("tool") val tool: String? = null,
     @SerializedName("callID") val callID: String? = null,
@@ -159,10 +162,10 @@ data class ApiContentPart(
 )
 
 data class ApiModelListResponse(
-    @SerializedName("data") val data: List<ApiModelEntry> = emptyList()
+    @SerializedName("data") val data: List<ApiModelItem> = emptyList()
 )
 
-data class ApiModelEntry(
+data class ApiModelItem(
     @SerializedName("id") val id: String,
     @SerializedName("name") val name: String? = null,
     @SerializedName("providerID") val providerID: String,
@@ -170,32 +173,33 @@ data class ApiModelEntry(
 )
 
 data class ApiModelVariant(
-    @SerializedName("id") val id: String
+    @SerializedName("id") val id: String,
+    @SerializedName("name") val name: String? = null
 )
 
 data class ApiProviderListResponse(
-    @SerializedName("data") val data: List<ApiProviderEntry> = emptyList()
+    @SerializedName("data") val data: List<ApiProviderItem> = emptyList()
 )
 
-data class ApiProviderEntry(
+data class ApiProviderItem(
     @SerializedName("id") val id: String,
     @SerializedName("name") val name: String? = null
 )
 
 data class ApiCommandListResponse(
-    @SerializedName("data") val data: List<ApiCommandEntry> = emptyList()
+    @SerializedName("data") val data: List<ApiCommandItem> = emptyList()
 )
 
-data class ApiCommandEntry(
+data class ApiCommandItem(
     @SerializedName("name") val name: String,
     @SerializedName("description") val description: String? = null
 )
 
 data class ApiFileListResponse(
-    @SerializedName("data") val data: List<ApiFileEntry> = emptyList()
+    @SerializedName("data") val data: List<ApiFileItem> = emptyList()
 )
 
-data class ApiFileEntry(
+data class ApiFileItem(
     @SerializedName("path") val path: String,
-    @SerializedName("type") val type: String
+    @SerializedName("type") val type: String // "file", "directory"
 )

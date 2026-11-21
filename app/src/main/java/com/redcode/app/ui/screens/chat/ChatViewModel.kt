@@ -39,6 +39,10 @@ class ChatViewModel @Inject constructor(
     private val _session = MutableStateFlow<SessionSummary?>(null)
     val session: StateFlow<SessionSummary?> = _session.asStateFlow()
 
+    val isSessionMuted: StateFlow<Boolean> = repository.isSessionMuted(sessionId).stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), false
+    )
+
     private val _isAgentBusy = MutableStateFlow(false)
     val isAgentBusy: StateFlow<Boolean> = _isAgentBusy.asStateFlow()
 
@@ -159,30 +163,58 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    fun renameSession(newTitle: String) {
+    fun renameSession(newTitle: String, onComplete: () -> Unit) {
         viewModelScope.launch {
             repository.renameSession(sessionId, newTitle)
+            onComplete()
         }
     }
 
-    fun markAsUnread() {
+    fun markAsUnread(onComplete: () -> Unit) {
         viewModelScope.launch {
             repository.markSessionAsUnread(sessionId, true)
+            onComplete()
         }
     }
 
-    fun deleteSession(onDeleted: () -> Unit) {
+    fun toggleMute(onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val isMuted = repository.toggleSessionMute(sessionId)
+            onResult(isMuted)
+        }
+    }
+
+    fun compactSession(onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            repository.compactSession(sessionId).fold(
+                onSuccess = { onResult(true, "Session compacted successfully") },
+                onFailure = { onResult(false, it.message ?: "Failed to compact session") }
+            )
+        }
+    }
+
+    fun forkSession(onResult: (String?) -> Unit) {
+        viewModelScope.launch {
+            repository.forkSession(sessionId).fold(
+                onSuccess = { onResult(it.id) },
+                onFailure = { onResult(null) }
+            )
+        }
+    }
+
+    fun exportSession(onResult: (String?) -> Unit) {
+        viewModelScope.launch {
+            repository.exportSession(sessionId).fold(
+                onSuccess = { onResult(it) },
+                onFailure = { onResult(null) }
+            )
+        }
+    }
+
+    fun deleteSession(onComplete: () -> Unit) {
         viewModelScope.launch {
             repository.deleteSession(sessionId)
-            onDeleted()
-        }
-    }
-
-    fun forkSession(onForked: (String) -> Unit) {
-        viewModelScope.launch {
-            repository.forkSession(sessionId).onSuccess { forked ->
-                onForked(forked.id)
-            }
+            onComplete()
         }
     }
 }

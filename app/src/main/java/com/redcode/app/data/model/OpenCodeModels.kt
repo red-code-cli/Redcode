@@ -1,7 +1,5 @@
 package com.redcode.app.data.model
 
-import com.google.gson.annotations.SerializedName
-
 data class ProjectFolder(
     val id: String,
     val name: String,
@@ -18,7 +16,7 @@ data class SessionSummary(
     val isUnread: Boolean = false,
     val isPinned: Boolean = false,
     val isArchived: Boolean = false,
-    val updatedAt: Long = 0L
+    val updatedAt: Long = System.currentTimeMillis()
 )
 
 data class MessageItem(
@@ -26,10 +24,9 @@ data class MessageItem(
     val sessionId: String,
     val role: MessageRole,
     val content: String,
-    val timestamp: Long = 0L,
+    val timestamp: Long = System.currentTimeMillis(),
     val tools: List<ToolInvocation> = emptyList(),
-    val sources: List<SourceItem> = emptyList(),
-    val isStreaming: Boolean = false
+    val sources: List<SourceItem> = emptyList()
 )
 
 enum class MessageRole {
@@ -41,19 +38,18 @@ enum class MessageRole {
 data class ToolInvocation(
     val id: String,
     val name: String,
-    val targetFile: String = "",
+    val targetFile: String,
     val oldString: String? = null,
     val newString: String? = null,
     val path: String? = null,
     val result: String? = null,
-    val isFailed: Boolean = false,
-    val isExpanded: Boolean = false
+    val isFailed: Boolean = false
 )
 
 data class SourceItem(
     val title: String,
-    val domain: String,
-    val url: String
+    val url: String? = null,
+    val snippet: String? = null
 )
 
 data class ModelItem(
@@ -75,7 +71,15 @@ data class MentionItem(
     val id: String,
     val title: String,
     val subtitle: String,
-    val isFile: Boolean
+    val isFile: Boolean = true
+)
+
+data class DrawerItemData(
+    val icon: String,
+    val title: String,
+    val count: Int? = null,
+    val badge: String? = null,
+    val hasDot: Boolean = false
 )
 
 data class ServerHealthState(
@@ -88,16 +92,11 @@ data class ServerHealthState(
 data class ExperimentalSettings(
     val allExperiments: Boolean = false,
     val hideUnusedModels: Boolean = false,
-    val backgroundCallShortcut: Boolean = false,
-    val sessionDelegator: Boolean = false,
-    val shareScreenWithAgents: Boolean = false,
-    val inboxSidebar: Boolean = false,
     val sessionLiveUpdates: Boolean = true,
     val soundEffects: Boolean = true,
-    val openLinksByServerAddress: Boolean = false,
-    val volumePercent: Int = 100,
     val sendSound: Boolean = false,
-    val inAppBrowser: Boolean = true
+    val inAppBrowser: Boolean = true,
+    val volumePercent: Int = 100
 )
 
 enum class SetupStepStatus {

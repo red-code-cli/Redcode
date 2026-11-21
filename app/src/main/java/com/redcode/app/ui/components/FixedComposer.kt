@@ -11,8 +11,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -71,32 +69,29 @@ fun FixedComposer(
     onStopRecording: () -> Unit,
     onCancelRecording: () -> Unit,
     onSend: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    recordingAmplitude: Float = 0f
 ) {
     var modeDropdownOpen by remember { mutableStateOf(false) }
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .navigationBarsPadding()
-            .imePadding()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .padding(horizontal = 16.dp, vertical = 10.dp)
             .background(ComposerBg, RoundedCornerShape(24.dp))
-            .padding(start = 12.dp, top = 10.dp, end = 12.dp, bottom = 12.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
         if (isRecording) {
             // Voice Recording Row
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 IconButton(
                     onClick = onCancelRecording,
                     modifier = Modifier
-                        .size(36.dp)
+                        .size(40.dp)
                         .background(SurfaceCardElevated, CircleShape)
                 ) {
                     Icon(
@@ -112,13 +107,13 @@ fun FixedComposer(
                         .weight(1f)
                         .padding(horizontal = 12.dp)
                 ) {
-                    DotMatrixWaveform(isRecording = true)
+                    DotMatrixWaveform(isRecording = true, amplitude = recordingAmplitude)
                 }
 
                 IconButton(
                     onClick = onStopRecording,
                     modifier = Modifier
-                        .size(36.dp)
+                        .size(40.dp)
                         .background(SurfaceCardElevated, CircleShape)
                 ) {
                     Icon(
@@ -134,14 +129,14 @@ fun FixedComposer(
                 IconButton(
                     onClick = onSend,
                     modifier = Modifier
-                        .size(36.dp)
-                        .background(Color(0xFF3A3A3C), RoundedCornerShape(12.dp))
+                        .size(40.dp)
+                        .background(Color(0xFF3A3A3C), CircleShape)
                 ) {
                     Icon(
                         imageVector = Icons.Default.ArrowUpward,
                         contentDescription = "Send",
                         tint = TextPrimary,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(22.dp)
                     )
                 }
             }
@@ -176,9 +171,7 @@ fun FixedComposer(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // + / X button with rotation animation

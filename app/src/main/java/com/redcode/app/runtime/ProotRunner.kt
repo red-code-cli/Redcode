@@ -85,7 +85,7 @@ class ProotRunner @Inject constructor(
             "-b", "/storage/emulated/0:/mnt/sdcard",
             "-b", "/sdcard:/sdcard",
             "-w", "/root",
-            "/bin/bash", "-c", script
+            "/bin/bash", "-lc", script
         )
 
         val pb = ProcessBuilder(cmd)
@@ -95,6 +95,7 @@ class ProotRunner @Inject constructor(
         env["PROOT_TMP_DIR"] = tmpDir.absolutePath
         env["HOME"] = "/root"
         env["USER"] = "root"
+        env["TERM"] = "xterm-256color"
         env["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
         env["TMPDIR"] = "/tmp"
         env["LANG"] = "C.UTF-8"
@@ -150,6 +151,7 @@ class ProotRunner @Inject constructor(
         env["PROOT_TMP_DIR"] = tmpDir.absolutePath
         env["HOME"] = "/root"
         env["USER"] = "root"
+        env["TERM"] = "xterm-256color"
         env["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
         env["TMPDIR"] = "/tmp"
         env["LANG"] = "C.UTF-8"

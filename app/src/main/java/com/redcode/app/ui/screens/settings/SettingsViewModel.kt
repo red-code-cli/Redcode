@@ -27,6 +27,7 @@ data class SettingsUiState(
     val serverHost: String = "127.0.0.1",
     val serverPort: Int = 49374,
     val selectedLanguage: String = "System Default",
+    val selectedTheme: String = "Dark (Pure OLED)",
     val experimentalSettings: ExperimentalSettings = ExperimentalSettings(),
     val changelogReleases: List<ChangelogRelease> = emptyList(),
     val storagePath: String = "",
@@ -48,8 +49,11 @@ class SettingsViewModel @Inject constructor(
     private val serverSettings = combine(
         preferencesManager.serverHost,
         preferencesManager.serverPort,
-        preferencesManager.selectedLanguage
-    ) { host, port, language -> Triple(host, port, language) }
+        preferencesManager.selectedLanguage,
+        preferencesManager.selectedTheme
+    ) { host, port, language, theme ->
+        listOf(host, port.toString(), language, theme)
+    }
 
     val uiState: StateFlow<SettingsUiState> = combine(
         healthMonitor.healthState,
@@ -58,12 +62,16 @@ class SettingsViewModel @Inject constructor(
         _changelogReleases,
         _isRestarting
     ) { health, server, experimental, changelog, restarting ->
-        val (host, port, language) = server
+        val host = server[0]
+        val port = server[1].toIntOrNull() ?: 49374
+        val language = server[2]
+        val theme = server[3]
         SettingsUiState(
             health = health,
             serverHost = host,
             serverPort = port,
             selectedLanguage = language,
+            selectedTheme = theme,
             experimentalSettings = experimental,
             changelogReleases = changelog,
             storagePath = "${context.filesDir.absolutePath}/ubuntu",
@@ -105,13 +113,8 @@ class SettingsViewModel @Inject constructor(
             val updated = ExperimentalSettings(
                 allExperiments = enabled,
                 hideUnusedModels = enabled,
-                backgroundCallShortcut = enabled,
-                sessionDelegator = enabled,
-                shareScreenWithAgents = enabled,
-                inboxSidebar = enabled,
                 sessionLiveUpdates = enabled,
                 soundEffects = enabled,
-                openLinksByServerAddress = enabled,
                 volumePercent = if (enabled) 100 else 50,
                 sendSound = enabled,
                 inAppBrowser = enabled
@@ -123,6 +126,12 @@ class SettingsViewModel @Inject constructor(
     fun setLanguage(language: String) {
         viewModelScope.launch {
             preferencesManager.setSelectedLanguage(language)
+        }
+    }
+
+    fun setTheme(theme: String) {
+        viewModelScope.launch {
+            preferencesManager.setSelectedTheme(theme)
         }
     }
 

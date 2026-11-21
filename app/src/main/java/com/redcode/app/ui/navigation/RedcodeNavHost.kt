@@ -76,6 +76,11 @@ fun RedcodeNavHost(
                 },
                 onNavigateToSettings = {
                     navController.navigate(Screen.Settings.route)
+                },
+                onNavigateToSession = { newSessionId ->
+                    navController.navigate(Screen.Chat.createRoute(newSessionId)) {
+                        popUpTo(Screen.Home.route)
+                    }
                 }
             )
         }

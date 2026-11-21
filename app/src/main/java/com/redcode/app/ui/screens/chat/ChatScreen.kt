@@ -1,8 +1,14 @@
 package com.redcode.app.ui.screens.chat
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -24,16 +30,22 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -44,6 +56,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.redcode.app.data.model.MessageItem
 import com.redcode.app.data.model.MessageRole
 import com.redcode.app.ui.components.AttachMenuPopup
@@ -56,17 +69,28 @@ import com.redcode.app.ui.components.SessionMenuPopup
 import com.redcode.app.ui.components.SlashCommandPopup
 import com.redcode.app.ui.components.ToolInvocationsGroup
 import com.redcode.app.ui.components.TopBarWithDot
+import com.redcode.app.ui.components.VoiceInputManager
+import com.redcode.app.ui.theme.BrandRed
 import com.redcode.app.ui.theme.DarkBackground
+import com.redcode.app.ui.theme.RedcodeAccentBlue
+import com.redcode.app.ui.theme.RedcodeAccentRed
+import com.redcode.app.ui.theme.RedcodeCardBackground
+import com.redcode.app.ui.theme.RedcodeTextPrimary
+import com.redcode.app.ui.theme.RedcodeTextSecondary
 import com.redcode.app.ui.theme.TextPrimary
 import com.redcode.app.ui.theme.UserBubbleBg
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun ChatScreen(
     viewModel: ChatViewModel,
     drawerState: DrawerState,
     onBackToHome: () -> Unit,
-    onNavigateToSettings: () -> Unit
+    onNavigateToSettings: () -> Unit,
+    onNavigateToSession: ((String) -> Unit)? = null
 ) {
     val session by viewModel.session.collectAsState()
     val messages by viewModel.messages.collectAsState()
@@ -77,6 +101,7 @@ fun ChatScreen(
     val models by viewModel.models.collectAsState()
     val slashCommands by viewModel.slashCommands.collectAsState()
     val mentionFiles by viewModel.mentionFiles.collectAsState()
+    val isMuted by viewModel.isSessionMuted.collectAsState()
 
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
@@ -85,7 +110,104 @@ fun ChatScreen(
     var isMenuOpen by remember { mutableStateOf(false) }
     var isModelSheetOpen by remember { mutableStateOf(false) }
     var isAttachPopupOpen by remember { mutableStateOf(false) }
+
+    // Dialog states
+    var showRenameDialog by remember { mutableStateOf(false) }
+    var renameTitleInput by remember { mutableStateOf("") }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var showInfoDialog by remember { mutableStateOf(false) }
+    var showMediaDialog by remember { mutableStateOf(false) }
+
+    // Voice recording states
     var isRecording by remember { mutableStateOf(false) }
+    var recordingAmplitude by remember { mutableFloatStateOf(0f) }
+    var textBeforeRecording by remember { mutableStateOf("") }
+
+    val voiceManager = remember { VoiceInputManager(context) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            voiceManager.destroy()
+        }
+    }
+
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            textBeforeRecording = inputText
+            isRecording = true
+            voiceManager.startListening(
+                onPartialResult = { partial ->
+                    val base = if (textBeforeRecording.isBlank()) "" else "$textBeforeRecording "
+                    viewModel.onInputTextChanged("$base$partial")
+                },
+                onFinalResult = { final ->
+                    val base = if (textBeforeRecording.isBlank()) "" else "$textBeforeRecording "
+                    viewModel.onInputTextChanged("$base$final")
+                    isRecording = false
+                    recordingAmplitude = 0f
+                },
+                onRmsChanged = { rms ->
+                    recordingAmplitude = rms
+                },
+                onError = { err ->
+                    Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+                    isRecording = false
+                    recordingAmplitude = 0f
+                }
+            )
+        } else {
+            Toast.makeText(context, "Microphone permission required for voice input", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun startVoiceInput() {
+        val hasPermission = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (hasPermission) {
+            textBeforeRecording = inputText
+            isRecording = true
+            voiceManager.startListening(
+                onPartialResult = { partial ->
+                    val base = if (textBeforeRecording.isBlank()) "" else "$textBeforeRecording "
+                    viewModel.onInputTextChanged("$base$partial")
+                },
+                onFinalResult = { final ->
+                    val base = if (textBeforeRecording.isBlank()) "" else "$textBeforeRecording "
+                    viewModel.onInputTextChanged("$base$final")
+                    isRecording = false
+                    recordingAmplitude = 0f
+                },
+                onRmsChanged = { rms ->
+                    recordingAmplitude = rms
+                },
+                onError = { err ->
+                    Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+                    isRecording = false
+                    recordingAmplitude = 0f
+                }
+            )
+        } else {
+            audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    fun stopVoiceInput() {
+        voiceManager.stopListening()
+        isRecording = false
+        recordingAmplitude = 0f
+    }
+
+    fun cancelVoiceInput() {
+        voiceManager.cancel()
+        viewModel.onInputTextChanged(textBeforeRecording)
+        isRecording = false
+        recordingAmplitude = 0f
+    }
 
     val showScrollToBottom by remember {
         derivedStateOf {
@@ -161,9 +283,10 @@ fun ChatScreen(
                     onAttachClick = { isAttachPopupOpen = !isAttachPopupOpen },
                     isAttachOpen = isAttachPopupOpen,
                     isRecording = isRecording,
-                    onStartRecording = { isRecording = true },
-                    onStopRecording = { isRecording = false },
-                    onCancelRecording = { isRecording = false },
+                    recordingAmplitude = recordingAmplitude,
+                    onStartRecording = { startVoiceInput() },
+                    onStopRecording = { stopVoiceInput() },
+                    onCancelRecording = { cancelVoiceInput() },
                     onSend = { viewModel.sendMessage() }
                 )
             }
@@ -239,36 +362,217 @@ fun ChatScreen(
                         onPin = {
                             viewModel.togglePin()
                             isMenuOpen = false
+                            val pinned = session?.isPinned == true
+                            Toast.makeText(context, if (!pinned) "Session pinned" else "Session unpinned", Toast.LENGTH_SHORT).show()
                         },
-                        onRename = { isMenuOpen = false },
+                        onRename = {
+                            renameTitleInput = session?.title.orEmpty()
+                            showRenameDialog = true
+                            isMenuOpen = false
+                        },
                         onCopyId = {
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             clipboard.setPrimaryClip(ClipData.newPlainText("Session ID", viewModel.sessionId))
+                            Toast.makeText(context, "Session ID copied to clipboard", Toast.LENGTH_SHORT).show()
                             isMenuOpen = false
                         },
                         onMarkUnread = {
-                            viewModel.markAsUnread()
-                            isMenuOpen = false
-                            onBackToHome()
-                        },
-                        onMute = { isMenuOpen = false },
-                        onCompact = { isMenuOpen = false },
-                        onFork = {
-                            viewModel.forkSession { isMenuOpen = false }
-                        },
-                        onExport = { isMenuOpen = false },
-                        onMedia = { isMenuOpen = false },
-                        onInfo = { isMenuOpen = false },
-                        onDelete = {
-                            viewModel.deleteSession {
+                            viewModel.markAsUnread {
+                                Toast.makeText(context, "Marked as unread", Toast.LENGTH_SHORT).show()
                                 isMenuOpen = false
                                 onBackToHome()
                             }
+                        },
+                        onMute = {
+                            viewModel.toggleMute { muted ->
+                                Toast.makeText(context, if (muted) "Session notifications muted" else "Session unmuted", Toast.LENGTH_SHORT).show()
+                                isMenuOpen = false
+                            }
+                        },
+                        onCompact = {
+                            isMenuOpen = false
+                            Toast.makeText(context, "Compacting session...", Toast.LENGTH_SHORT).show()
+                            viewModel.compactSession { success, msg ->
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        onFork = {
+                            isMenuOpen = false
+                            Toast.makeText(context, "Forking session...", Toast.LENGTH_SHORT).show()
+                            viewModel.forkSession { newId ->
+                                if (newId != null) {
+                                    Toast.makeText(context, "Forked to new session", Toast.LENGTH_SHORT).show()
+                                    onNavigateToSession?.invoke(newId) ?: onBackToHome()
+                                } else {
+                                    Toast.makeText(context, "Failed to fork session", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        },
+                        onExport = {
+                            isMenuOpen = false
+                            Toast.makeText(context, "Exporting session...", Toast.LENGTH_SHORT).show()
+                            viewModel.exportSession { json ->
+                                if (json != null) {
+                                    val sendIntent = Intent().apply {
+                                        action = Intent.ACTION_SEND
+                                        putExtra(Intent.EXTRA_TEXT, json)
+                                        putExtra(Intent.EXTRA_SUBJECT, "Exported Session: ${session?.title}")
+                                        type = "application/json"
+                                    }
+                                    val shareIntent = Intent.createChooser(sendIntent, "Export Session")
+                                    context.startActivity(shareIntent)
+                                } else {
+                                    Toast.makeText(context, "Failed to export session", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        },
+                        onMedia = {
+                            isMenuOpen = false
+                            showMediaDialog = true
+                        },
+                        onInfo = {
+                            isMenuOpen = false
+                            showInfoDialog = true
+                        },
+                        onDelete = {
+                            isMenuOpen = false
+                            showDeleteDialog = true
                         }
                     )
                 }
             }
         }
+    }
+
+    // Rename Dialog
+    if (showRenameDialog) {
+        AlertDialog(
+            onDismissRequest = { showRenameDialog = false },
+            title = { Text("Rename Session", color = RedcodeTextPrimary) },
+            text = {
+                OutlinedTextField(
+                    value = renameTitleInput,
+                    onValueChange = { renameTitleInput = it },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = RedcodeTextPrimary,
+                        unfocusedTextColor = RedcodeTextPrimary,
+                        focusedBorderColor = RedcodeAccentBlue,
+                        unfocusedBorderColor = RedcodeTextSecondary
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val newTitle = renameTitleInput.trim()
+                        if (newTitle.isNotBlank()) {
+                            viewModel.renameSession(newTitle) {
+                                showRenameDialog = false
+                            }
+                        }
+                    }
+                ) {
+                    Text("Rename", color = RedcodeAccentBlue)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRenameDialog = false }) {
+                    Text("Cancel", color = RedcodeTextSecondary)
+                }
+            },
+            containerColor = RedcodeCardBackground
+        )
+    }
+
+    // Delete Confirmation Dialog
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete Session?", color = RedcodeTextPrimary) },
+            text = {
+                Text(
+                    "Are you sure you want to delete this session? This action cannot be undone.",
+                    color = RedcodeTextSecondary
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteDialog = false
+                        viewModel.deleteSession {
+                            Toast.makeText(context, "Session deleted", Toast.LENGTH_SHORT).show()
+                            onBackToHome()
+                        }
+                    }
+                ) {
+                    Text("Delete", color = RedcodeAccentRed)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Cancel", color = RedcodeTextSecondary)
+                }
+            },
+            containerColor = RedcodeCardBackground
+        )
+    }
+
+    // Session Info Dialog
+    if (showInfoDialog) {
+        val s = session
+        val dateStr = s?.updatedAt?.let {
+            SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault()).format(Date(it))
+        } ?: "Unknown"
+
+        AlertDialog(
+            onDismissRequest = { showInfoDialog = false },
+            title = { Text("Session Info", color = RedcodeTextPrimary) },
+            text = {
+                Column {
+                    Text("Title: ${s?.title ?: "Untitled"}", color = RedcodeTextPrimary)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("ID: ${viewModel.sessionId}", color = RedcodeTextSecondary, fontSize = 12.sp)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("Project: ${s?.project?.ifBlank { "Default / None" } ?: "Default / None"}", color = RedcodeTextSecondary)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("Messages: ${messages.size}", color = RedcodeTextSecondary)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("Updated: $dateStr", color = RedcodeTextSecondary)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("Muted: ${if (isMuted) "Yes" else "No"}", color = RedcodeTextSecondary)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("Pinned: ${if (s?.isPinned == true) "Yes" else "No"}", color = RedcodeTextSecondary)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showInfoDialog = false }) {
+                    Text("Close", color = RedcodeAccentBlue)
+                }
+            },
+            containerColor = RedcodeCardBackground
+        )
+    }
+
+    // Session Media Dialog
+    if (showMediaDialog) {
+        AlertDialog(
+            onDismissRequest = { showMediaDialog = false },
+            title = { Text("Session Media", color = RedcodeTextPrimary) },
+            text = {
+                Text(
+                    "No media, attachments, or image files attached in this session.",
+                    color = RedcodeTextSecondary
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showMediaDialog = false }) {
+                    Text("Close", color = RedcodeAccentBlue)
+                }
+            },
+            containerColor = RedcodeCardBackground
+        )
     }
 
     if (isModelSheetOpen) {

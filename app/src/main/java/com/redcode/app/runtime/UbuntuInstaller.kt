@@ -1,6 +1,7 @@
 package com.redcode.app.runtime
 
 import android.content.Context
+import android.system.Os
 import android.util.Log
 import com.redcode.app.BuildConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -8,7 +9,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.withContext
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
 import java.io.File
@@ -17,6 +17,8 @@ import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.URL
+import java.nio.file.Files
+import java.nio.file.Paths
 import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -37,6 +39,7 @@ class UbuntuInstaller @Inject constructor(
 ) {
     companion object {
         private const val TAG = "UbuntuInstaller"
+        const val MARKER_FILE_NAME = ".extracted_success"
         val MIRROR_URLS = listOf(
             BuildConfig.UBUNTU_ROOTFS_URL,
             "http://mirrors.kernel.org/ubuntu-cdimage/ubuntu-base/releases/22.04/release/ubuntu-base-22.04.4-base-arm64.tar.gz",
@@ -49,7 +52,43 @@ class UbuntuInstaller @Inject constructor(
         get() = File(context.filesDir, "ubuntu")
 
     val isRootfsInstalled: Boolean
-        get() = File(ubuntuDir, "bin/bash").exists() || File(ubuntuDir, "usr/bin/bash").exists()
+        get() {
+            val marker = File(ubuntuDir, MARKER_FILE_NAME)
+            val bashUsr = File(ubuntuDir, "usr/bin/bash")
+            val bashBin = File(ubuntuDir, "bin/bash")
+            val valid = marker.exists() && (bashUsr.exists() || bashBin.exists())
+            if (!valid && ubuntuDir.exists() && ubuntuDir.list()?.isNotEmpty() == true) {
+                Log.w(TAG, "Ubuntu rootfs incomplete or corrupted, cleaning up...")
+                ubuntuDir.deleteRecursively()
+            }
+            return valid
+        }
+
+    fun inspectRootfs(): List<String> {
+        val info = mutableListOf<String>()
+        info.add("Rootfs dir: ${ubuntuDir.absolutePath} (exists=${ubuntuDir.exists()})")
+        if (!ubuntuDir.exists()) return info
+
+        val binFile = File(ubuntuDir, "bin")
+        val isBinSymlink = Files.isSymbolicLink(binFile.toPath())
+        info.add("/bin: exists=${binFile.exists()}, isDirectory=${binFile.isDirectory}, isSymlink=$isBinSymlink")
+
+        val usrBinBash = File(ubuntuDir, "usr/bin/bash")
+        info.add("/usr/bin/bash: exists=${usrBinBash.exists()}, canExecute=${usrBinBash.canExecute()}, length=${usrBinBash.length()}")
+
+        val binBash = File(ubuntuDir, "bin/bash")
+        info.add("/bin/bash: exists=${binBash.exists()}, canExecute=${binBash.canExecute()}")
+
+        val resolv = File(ubuntuDir, "etc/resolv.conf")
+        info.add("/etc/resolv.conf: exists=${resolv.exists()}, size=${resolv.length()}")
+
+        val marker = File(ubuntuDir, MARKER_FILE_NAME)
+        info.add("$MARKER_FILE_NAME: exists=${marker.exists()}")
+
+        val topDirs = ubuntuDir.listFiles()?.map { it.name } ?: emptyList()
+        info.add("Top-level entries: $topDirs")
+        return info
+    }
 
     fun installUbuntu(): Flow<InstallProgress> = flow {
         val rootfsDir = ubuntuDir
@@ -77,7 +116,7 @@ class UbuntuInstaller @Inject constructor(
                     Log.d(TAG, "Attempting download from mirror: $mirrorUrl")
                     downloadFileWithResume(mirrorUrl, cacheArchive) { downloaded, total, speed, eta ->
                         val percent = if (total > 0) ((downloaded * 100) / total).toInt() else 0
-                        // Emit downloading progress
+                        // Progress callback
                     }
                     if (verifySha256(cacheArchive, EXPECTED_SHA256)) {
                         downloadSuccess = true
@@ -98,7 +137,7 @@ class UbuntuInstaller @Inject constructor(
             return@flow
         }
 
-        // 2. Extract RootFS
+        // 2. Extract RootFS with true POSIX symlinks and hardlinks
         emit(InstallProgress.Extracting("Extracting Ubuntu rootfs...", 0))
         try {
             extractTarGz(cacheArchive, rootfsDir) { fileName, percent ->
@@ -112,6 +151,13 @@ class UbuntuInstaller @Inject constructor(
         // 3. Post-extract setup: DNS + Mount Points
         setupResolvConf(rootfsDir)
         setupMountPoints(rootfsDir)
+
+        // 4. Write success marker file
+        try {
+            File(rootfsDir, MARKER_FILE_NAME).writeText("OK:${System.currentTimeMillis()}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to write marker file", e)
+        }
 
         emit(InstallProgress.Success("Ubuntu runtime extracted and configured!"))
     }.flowOn(Dispatchers.IO)
@@ -236,22 +282,53 @@ class UbuntuInstaller @Inject constructor(
                     var entry = tais.nextTarEntry
                     while (entry != null) {
                         val outFile = File(targetDir, entry.name)
+
                         if (entry.isDirectory) {
                             if (!outFile.exists()) outFile.mkdirs()
                         } else if (entry.isSymbolicLink) {
-                            // proot handles symlinks, write link target file
                             try {
-                                val linkFile = File(targetDir, entry.name)
-                                linkFile.parentFile?.mkdirs()
-                                linkFile.writeText(entry.linkName)
-                            } catch (_: Exception) {}
+                                if (outFile.exists() || Files.isSymbolicLink(outFile.toPath())) {
+                                    outFile.delete()
+                                }
+                                outFile.parentFile?.mkdirs()
+                                try {
+                                    Os.symlink(entry.linkName, outFile.absolutePath)
+                                } catch (_: Throwable) {
+                                    Files.createSymbolicLink(outFile.toPath(), Paths.get(entry.linkName))
+                                }
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Symlink error for ${entry.name} -> ${entry.linkName}: ${e.message}")
+                            }
+                        } else if (entry.isLink) {
+                            try {
+                                if (outFile.exists() || Files.isSymbolicLink(outFile.toPath())) {
+                                    outFile.delete()
+                                }
+                                outFile.parentFile?.mkdirs()
+                                val targetFile = File(targetDir, entry.linkName)
+                                try {
+                                    Os.link(targetFile.absolutePath, outFile.absolutePath)
+                                } catch (_: Throwable) {
+                                    Files.createLink(outFile.toPath(), targetFile.toPath())
+                                }
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Hardlink error for ${entry.name} -> ${entry.linkName}: ${e.message}")
+                            }
                         } else {
                             outFile.parentFile?.mkdirs()
                             FileOutputStream(outFile).use { fos ->
                                 tais.copyTo(fos)
                             }
-                            if (entry.mode and 0x49 != 0) { // executable
-                                outFile.setExecutable(true, false)
+                            // Set permissions
+                            val mode = entry.mode and 0xFFF
+                            if (mode != 0) {
+                                try {
+                                    Os.chmod(outFile.absolutePath, mode)
+                                } catch (_: Throwable) {
+                                    if (mode and 0x49 != 0) {
+                                        outFile.setExecutable(true, false)
+                                    }
+                                }
                             }
                         }
                         count++

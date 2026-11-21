@@ -34,6 +34,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -75,6 +77,9 @@ fun SettingsScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     var showResetDialog by remember { mutableStateOf(false) }
+    var showThemeDialog by remember { mutableStateOf(false) }
+
+    val themeOptions = listOf("Dark (Pure OLED)", "Dark (Charcoal)", "Light", "System Default")
 
     Scaffold(
         containerColor = RedcodeDarkBackground,
@@ -131,8 +136,8 @@ fun SettingsScreen(
                     SettingsRow(
                         icon = Icons.Default.Palette,
                         title = "Appearance",
-                        subtitle = "Dark (Pure OLED)",
-                        onClick = null
+                        subtitle = state.selectedTheme,
+                        onClick = { showThemeDialog = true }
                     )
                     SettingsDivider()
                     SettingsRow(
@@ -250,8 +255,8 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // 5. Danger Zone / Reset
-            SectionHeader(title = "MAINTENANCE")
+            // 5. Danger Zone / Re-run Setup Card
+            SectionHeader(title = "RESET")
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
@@ -313,6 +318,49 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    if (showThemeDialog) {
+        AlertDialog(
+            onDismissRequest = { showThemeDialog = false },
+            title = { Text("Choose Appearance", color = RedcodeTextPrimary) },
+            text = {
+                Column {
+                    themeOptions.forEach { themeName ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    viewModel.setTheme(themeName)
+                                    showThemeDialog = false
+                                }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = (themeName == state.selectedTheme),
+                                onClick = {
+                                    viewModel.setTheme(themeName)
+                                    showThemeDialog = false
+                                },
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = RedcodeAccentBlue,
+                                    unselectedColor = RedcodeTextSecondary
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = themeName, color = RedcodeTextPrimary)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showThemeDialog = false }) {
+                    Text("Close", color = RedcodeAccentBlue)
+                }
+            },
+            containerColor = RedcodeCardBackground
+        )
     }
 
     if (showResetDialog) {
@@ -450,32 +498,26 @@ private fun SettingsRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .clickable(enabled = onClick != null) { onClick?.invoke() }
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = RedcodeTextSecondary,
-            modifier = Modifier.size(22.dp)
+            tint = RedcodeTextPrimary
         )
         Spacer(modifier = Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.bodyLarge.copy(
-                    fontWeight = FontWeight.Medium,
-                    color = RedcodeTextPrimary
-                )
+                color = RedcodeTextPrimary,
+                style = MaterialTheme.typography.bodyLarge
             )
-            Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = subtitle,
-                style = MaterialTheme.typography.bodySmall.copy(
-                    color = RedcodeTextSecondary
-                ),
-                maxLines = 1
+                color = RedcodeTextSecondary,
+                style = MaterialTheme.typography.bodySmall
             )
         }
         if (badgeText != null) {
@@ -496,8 +538,7 @@ private fun SettingsRow(
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,
-                tint = RedcodeTextSecondary,
-                modifier = Modifier.size(20.dp)
+                tint = RedcodeTextSecondary
             )
         }
     }
@@ -508,7 +549,7 @@ private fun SettingsDivider() {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 54.dp)
+            .padding(horizontal = 16.dp)
             .height(1.dp)
             .background(RedcodeDivider)
     )
